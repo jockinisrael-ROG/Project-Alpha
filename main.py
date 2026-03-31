@@ -12,7 +12,7 @@ import requests
 # =============================
 # CONFIG
 # =============================
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 
 MODEL = "openai/gpt-4o-mini"
 
@@ -224,6 +224,9 @@ def speech_to_text(audio_path):
 # OPENROUTER CALL
 # =============================
 def get_ai_response(user_text):
+    if not OPENROUTER_API_KEY:
+        return "OpenRouter key is missing. Set OPENROUTER_API_KEY in your environment."
+
     url = "https://openrouter.ai/api/v1/chat/completions"
 
     headers = {
