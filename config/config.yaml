@@ -7,12 +7,15 @@ stt:
   sample_rate: 16000
   recording_seconds: 4
   max_recording_seconds: 20
+  speech_start_timeout_seconds: 300
+  min_speech_seconds: 0.25
   recording_file: "audio/recording.wav"
   whisper_model: "base"
   language: "en"
   device: "cpu"
   compute_type: "int8"
   silence_threshold: 0.008
+  threshold_multiplier: 2.5
   chunk_seconds: 0.1
   max_silence_seconds: 0.45
 
@@ -40,3 +43,11 @@ llm:
 
 memory:
   db_path: "memory/memory.db"
+
+vision:
+  enabled: true
+  camera_index: 0
+  sample_seconds: 0.15
+  auto_calibration: true
+  calibration_refresh_minutes: 120
+  calibration_sample_seconds: 1.8

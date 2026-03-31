@@ -49,6 +49,85 @@ _backend: Optional[str] = None
 _openai_client: Optional[Any] = None
 
 
+def _build_user_message(user_input: str, emotion_label: Optional[str]) -> str:
+    if not emotion_label:
+        return user_input
+
+    # Parse scene data from pipe-separated tags (e.g., "happy|dim_lighting|cluttered_space|color_blue")
+    tags = emotion_label.split("|")
+    emotion = tags[0] if tags else "neutral"
+    
+    # Extract detailed scene features
+    clothing_color = next((t.replace("wearing_", "") for t in tags if t.startswith("wearing_")), None)
+    lighting = next((t for t in tags if t in ["very_dim", "dim", "bright", "very_bright"]), None)
+    bg_complexity = next((t for t in tags if t in ["cluttered", "very_cluttered", "moderate", "clean", "organized_space"]), None)
+    bg_objects = next((int(t.replace("objects_", "")) for t in tags if t.startswith("objects_")), 0)
+    has_multiple_people = "multiple_people" in tags
+    
+    # Legacy support for old tag format
+    has_dim_lighting = "dim_lighting" in tags or lighting in ["dim", "very_dim"]
+    has_bright_lighting = "bright_lighting" in tags or lighting in ["bright", "very_bright"]
+    is_cluttered = "cluttered_space" in tags or bg_complexity in ["cluttered", "very_cluttered"]
+    color = next((t.replace("color_", "") for t in tags if t.startswith("color_")), None)
+    
+    # Build emotion context
+    emotion_contexts = {
+        "happy": "they appear happy and smiling. Respond warmly and match their positive energy!",
+        "sad": "they appear sad or upset. Be empathetic, caring, and offer support naturally.",
+        "angry": "they appear angry or frustrated. Be calm, understanding, and help them cool down.",
+        "neutral": "they have a neutral expression. Be friendly and welcoming.",
+    }
+    emotion_context = emotion_contexts.get(emotion, emotion)
+    
+    # Build scene context and suggestions
+    scene_suggestions = []
+    
+    # Clothing observations
+    if clothing_color:
+        scene_suggestions.append(f"they're wearing {clothing_color} - nice style choice!")
+    
+    # Lighting observations
+    if lighting == "very_dim":
+        scene_suggestions.append("their room is very dark - suggest turning on lights for better focus and mood")
+    elif lighting == "dim":
+        scene_suggestions.append("the lighting is a bit dim - they might benefit from brighter light")
+    elif lighting == "very_bright":
+        scene_suggestions.append("it's quite bright where they are - maybe suggest adjusting for comfort")
+    elif has_dim_lighting:
+        scene_suggestions.append("their environment looks dim - they might benefit from turning on a light or moving to a brighter space")
+    elif has_bright_lighting:
+        scene_suggestions.append("the lighting is quite bright - maybe suggest adjusting it for comfort")
+    
+    # Background/environment observations
+    if bg_complexity == "very_cluttered":
+        scene_suggestions.append("their space looks quite cluttered - mention that a quick tidy might help them focus")
+    elif bg_complexity == "cluttered" or is_cluttered:
+        scene_suggestions.append("their space looks a bit busy - organizing could help with focus and calm")
+    elif bg_complexity == "moderate":
+        scene_suggestions.append("their workspace has some items around")
+    
+    if bg_objects > 1:
+        scene_suggestions.append(f"you can see about {bg_objects} distinct items in their background")
+    
+    # Color mood
+    if color:
+        scene_suggestions.append(f"their surroundings have a {color} tone which creates a certain mood")
+    
+    # People detection
+    if has_multiple_people:
+        scene_suggestions.append("there are multiple people around them")
+    
+    scene_part = ""
+    if scene_suggestions:
+        scene_part = "\n[Scene insights: " + "; ".join(scene_suggestions) + "]"
+    
+    return (
+        f"{user_input}\n\n"
+        f"[Camera emotion: {emotion_context} Include a natural check-in about how they're feeling.{scene_part}]"
+    )
+
+
+
 def add_reactions(text: str) -> str:
     prefixes = ["*hmph*", "*sigh*", "*looks away*", "*blushes slightly*"]
     if text and random.random() < 0.45:
@@ -193,8 +272,9 @@ def _openrouter_stream(messages: List[Dict[str, str]]) -> Generator[str, None, N
             yield str(delta)
 
 
-def get_response(user_input: str) -> str:
-    chat_history.append({"role": "user", "content": user_input})
+def get_response(user_input: str, emotion_label: Optional[str] = None) -> str:
+    llm_user_message = _build_user_message(user_input, emotion_label)
+    chat_history.append({"role": "user", "content": llm_user_message})
     save_message(MEMORY_DB_PATH, "user", user_input)
 
     try:
@@ -211,8 +291,11 @@ def get_response(user_input: str) -> str:
     return reply
 
 
-def get_response_stream(user_input: str) -> Generator[str, None, str]:
-    chat_history.append({"role": "user", "content": user_input})
+def get_response_stream(
+    user_input: str, emotion_label: Optional[str] = None
+) -> Generator[str, None, str]:
+    llm_user_message = _build_user_message(user_input, emotion_label)
+    chat_history.append({"role": "user", "content": llm_user_message})
     save_message(MEMORY_DB_PATH, "user", user_input)
 
     parts: List[str] = []
