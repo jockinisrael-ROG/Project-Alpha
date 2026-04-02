@@ -1,30 +1,33 @@
-from pathlib import Path
-from typing import Any, Dict
+"""Configuration loader."""
 
+from pathlib import Path
+import logging
 import yaml
 
+logger = logging.getLogger(__name__)
 
-DEFAULT_CONFIG: Dict[str, Any] = {
+DEFAULT_CONFIG = {
     "assistant": {
         "name": "Alpha",
-        "system_prompt": "You are Alpha, a cute anime tsundere AI assistant. Playful, teasing, slightly rude but caring.",
+        "system_prompt": "You are Alpha, a cute anime tsundere AI assistant. Playful, teasing, respectful, and caring.",
     },
     "stt": {
         "vad_mode": True,
         "sample_rate": 16000,
         "recording_seconds": 4,
         "max_recording_seconds": 20,
-            "speech_start_timeout_seconds": 300,
-            "min_speech_seconds": 0.25,
+        "speech_start_timeout_seconds": 300,
+        "min_speech_seconds": 0.2,
         "recording_file": "audio/recording.wav",
         "whisper_model": "base",
         "language": "en",
         "device": "cpu",
         "compute_type": "int8",
-        "silence_threshold": 0.008,
-            "threshold_multiplier": 2.5,
+        "silence_threshold": 0.004,
+        "threshold_multiplier": 1.9,
         "chunk_seconds": 0.1,
-        "max_silence_seconds": 0.45,
+        "max_silence_seconds": 0.8,
+        "input_device": None,
     },
     "tts": {
         "voice": "en-US-AnaNeural",
@@ -42,7 +45,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "stream_tts_max_delay_sec": 0.25,
         "openrouter_base_url": "https://openrouter.ai/api/v1",
         "openrouter_model": "openai/gpt-4o-mini",
-        "openrouter_api_key": "",
+        "openrouter_api_key": "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",
         "site_url": "http://localhost",
         "app_name": "Alpha Local Assistant",
         "temperature": 0.7,
@@ -55,29 +58,45 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": True,
         "camera_index": 0,
         "sample_seconds": 0.15,
+        "turn_interval": 1,
         "auto_calibration": True,
         "calibration_refresh_minutes": 120,
         "calibration_sample_seconds": 1.8,
+        "enhanced_models": False,
     },
 }
 
 
-def _deep_merge(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
-    merged = dict(base)
+def _merge_dicts(base, updates):
+    """Recursively merge updates into base."""
+    result = dict(base)
     for key, value in updates.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge(merged[key], value)
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _merge_dicts(result[key], value)
         else:
-            merged[key] = value
-    return merged
+            result[key] = value
+    return result
 
 
-def load_config() -> Dict[str, Any]:
+def load_config():
+    """Load config from config/config.yaml or return defaults."""
     config_path = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+    
     if not config_path.exists():
+        logger.warning(f"Config not found at {config_path}, using defaults")
         return DEFAULT_CONFIG
-
-    with config_path.open("r", encoding="utf-8") as file:
-        loaded = yaml.safe_load(file) or {}
-
-    return _deep_merge(DEFAULT_CONFIG, loaded)
+    
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            loaded = yaml.safe_load(f) or {}
+        
+        if not isinstance(loaded, dict):
+            logger.error(f"Invalid YAML in {config_path}")
+            return DEFAULT_CONFIG
+            
+        logger.info(f"Loaded config from {config_path}")
+        return _merge_dicts(DEFAULT_CONFIG, loaded)
+        
+    except Exception as e:
+        logger.error(f"Config load error: {e}")
+        return DEFAULT_CONFIG

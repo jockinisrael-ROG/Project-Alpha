@@ -1,0 +1,16 @@
+# Enhanced vision AI models - optional dependencies for advanced image understanding
+# Install with: pip install -r vision-enhanced-requirements.txt
+
+torch>=2.0.0
+torchvision>=0.15.0
+clip @ git+https://github.com/openai/CLIP.git
+transformers>=4.30.0
+pillow>=9.0.0
+Pillow-SIMD>=9.0.0.post1
+
+# LLaVA for Visual Question Answering
+# Note: LLaVA requires significant VRAM. Recommended: 8GB+ VRAM
+# git+https://github.com/haotian-liu/LLaVA.git
+
+# YOLO for object detection  
+ultralytics>=8.1.0

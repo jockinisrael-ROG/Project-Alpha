@@ -1,6 +1,8 @@
+numpy<2.0
 faster-whisper
 sounddevice
 soundfile
 edge-tts
 openai
-opencv-python
+opencv-python<4.12
+websockets

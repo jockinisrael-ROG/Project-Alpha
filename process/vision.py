@@ -1,6 +1,9 @@
-﻿from __future__ import annotations
+﻿"""Computer vision module for emotion detection and color calibration using OpenCV."""
+
+from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Optional
@@ -11,6 +14,10 @@ try:
 except Exception:
     cv2 = None
     np = None
+
+from process.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 _FACE_CASCADE = None
@@ -155,8 +162,9 @@ def _analyze_clothing_color(roi_bgr: np.ndarray) -> str:
     s_ch = hsv[:, :, 1]
     v_ch = hsv[:, :, 2]
 
-    # First prioritize colorful pixels, then fallback to achromatic labels.
-    color_mask = (s_ch >= 35) & (v_ch >= 35)
+    # Lower saturation threshold to catch pastel colors like light pink
+    # Pastel colors have naturally low saturation
+    color_mask = (s_ch >= 8) & (v_ch >= 35)
     color_count = int(np.count_nonzero(color_mask))
     total_count = int(hsv.shape[0] * hsv.shape[1])
 
@@ -170,20 +178,20 @@ def _analyze_clothing_color(roi_bgr: np.ndarray) -> str:
                 return 0.0
             return float(np.sum(w_vals[mask]))
 
-        red_mask = (h_vals <= 10) | (h_vals >= 160)
+        red_mask = (h_vals <= 10) | (h_vals >= 170)
         bins = {
             "red": _w(red_mask),
             "orange": _w((h_vals >= 11) & (h_vals <= 24)),
             "yellow": _w((h_vals >= 25) & (h_vals <= 35)),
             "green": _w((h_vals >= 36) & (h_vals <= 85)),
             "blue": _w((h_vals >= 86) & (h_vals <= 130)),
-            "purple": _w((h_vals >= 131) & (h_vals <= 155)),
-            "pink": _w((h_vals >= 156) & (h_vals <= 169)),
+            "purple": _w((h_vals >= 131) & (h_vals <= 150)),
+            "pink": _w((h_vals >= 151) & (h_vals <= 169)),
         }
 
         # Extra red rescue for low-light maroon/red shirts.
         red_ratio = float(np.count_nonzero(red_mask)) / float(max(1, h_vals.size))
-        if red_ratio >= 0.12:
+        if red_ratio >= 0.14:
             return "red"
 
         best_color = max(bins, key=bins.get)
@@ -220,11 +228,24 @@ def _analyze_clothing_color(roi_bgr: np.ndarray) -> str:
 
     mean_v = float(np.mean(v_ch))
     mean_s = float(np.mean(s_ch))
+    median_h = int(np.median(h_ch))
+    mode_h_bins = np.bincount(h_ch.flatten())
+    mode_h = int(np.argmax(mode_h_bins))
+
+    # Fallback pastel pink detection if main detection fails
+    # Light pink: median/mode hue in pink range with low-moderate saturation
+    if ((145 <= median_h <= 175) or (145 <= mode_h <= 175)) and mean_s >= 8:
+        return "pink"
+    
+    # Pastel red/magenta
+    if ((mode_h <= 10) or (mode_h >= 165)) and mean_s >= 12 and 150 <= mean_v <= 230:
+        return "red"
+
     if mean_v <= 50:
         return "black"
-    if mean_s <= 28 and mean_v >= 200:
+    if mean_s <= 20 and mean_v >= 200:
         return "white"
-    if mean_s <= 32:
+    if mean_s <= 24:
         return "gray"
     return "unknown"
 
@@ -514,13 +535,13 @@ def detect_emotion_snapshot(
 
     if cv2 is None:
         if not _WARNED_MISSING_CV:
-            print("[Vision] OpenCV not installed; skipping analysis.")
+            logger.debug("OpenCV not installed")
             _WARNED_MISSING_CV = True
         return None
 
     if not _ensure_cascades():
         if not _WARNED_CASCADE_UNAVAILABLE:
-            print("[Vision] Could not load OpenCV cascades; skipping analysis.")
+            logger.debug("Could not load OpenCV cascades")
             _WARNED_CASCADE_UNAVAILABLE = True
         return None
 
@@ -529,7 +550,7 @@ def detect_emotion_snapshot(
         cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
         if not _WARNED_CAMERA_UNAVAILABLE:
-            print(f"[Vision] Camera index {camera_index} is not available.")
+            logger.debug(f"Camera index {camera_index} not available")
             _WARNED_CAMERA_UNAVAILABLE = True
         return None
 
@@ -592,15 +613,15 @@ def detect_emotion_snapshot(
 
                 smiles = _SMILE_CASCADE.detectMultiScale(
                     face_roi,
-                    scaleFactor=1.35,
-                    minNeighbors=7,
+                    scaleFactor=1.25,
+                    minNeighbors=5,
                     minSize=(20, 20),
                 )
                 eyes = _EYES_CASCADE.detectMultiScale(
                     face_roi,
                     scaleFactor=1.12,
-                    minNeighbors=5,
-                    minSize=(12, 12),
+                    minNeighbors=4,
+                    minSize=(10, 10),
                 )
 
                 upper_roi = face_roi[: max(1, h // 3), :]
@@ -610,19 +631,26 @@ def detect_emotion_snapshot(
                 eye_count = int(len(eyes))
                 smile_count = int(len(smiles))
 
-                # Per-frame emotion classification favors neutral unless evidence is clear.
+                # Per-frame emotion classification: prefer clear signals over strict thresholds.
                 frame_emotion = "neutral"
                 if smile_count > 0:
                     frame_emotion = "happy"
-                else:
-                    angry_signal = upper_mean < 90 and eye_count >= 1 and brightness >= 70
-                    sad_signal = (eye_count == 0 and lower_mean < 85) or (
-                        eye_count <= 1 and lower_mean < 78 and brightness < 145
-                    )
-                    if angry_signal:
-                        frame_emotion = "angry"
-                    elif sad_signal:
+                elif smile_count == 0 and eye_count >= 2:
+                    # Eyes detected but no smile: likely neutral or concentrating
+                    frame_emotion = "neutral"
+                elif eye_count == 0:
+                    # No eyes detected: either sad (eyes down) or poor detection
+                    # Rely on lower face brightness as secondary signal
+                    if lower_mean < 90 and brightness < 140:
                         frame_emotion = "sad"
+                    else:
+                        frame_emotion = "neutral"
+                else:
+                    # Some eyes detected, no smile: check brightness patterns
+                    if upper_mean < 85 and brightness >= 75:
+                        frame_emotion = "angry"
+                    else:
+                        frame_emotion = "neutral"
 
                 emotion_votes[frame_emotion] = emotion_votes.get(frame_emotion, 0) + 1
 

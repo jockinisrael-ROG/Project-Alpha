@@ -9,6 +9,7 @@ ffmpeg-python
 onnxruntime; sys_platform == 'darwin'
 onnxruntime-gpu; sys_platform != 'darwin'
 tqdm
+websockets
 funasr==1.0.27
 cn2an
 pypinyin

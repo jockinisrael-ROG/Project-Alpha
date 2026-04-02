@@ -1,7 +1,10 @@
+"""Text-To-Speech module using Edge TTS with async streaming and caching."""
+
 import atexit
 import asyncio
 import io
 import importlib
+import logging
 import queue
 import threading
 import time
@@ -13,13 +16,16 @@ import soundfile as sf
 
 from utils.config_loader import load_config
 from process.events import dispatch_event
+from process.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 _TTS_QUEUE: "queue.Queue[str]" = queue.Queue(maxsize=4)
 _TTS_STOP = threading.Event()
 _TTS_WORKER: Optional[threading.Thread] = None
 _AUDIO_CACHE: Dict[str, bytes] = {}
-_CACHE_LIMIT = 12
+_CACHE_LIMIT = 32
 _ASYNC_LOOP: Optional[asyncio.AbstractEventLoop] = None
 _ASYNC_THREAD: Optional[threading.Thread] = None
 _ASYNC_LOCK = threading.Lock()
@@ -33,13 +39,7 @@ def _load_edge_tts():
 
 
 def _detect_tone(text: str) -> str:
-    low = text.lower()
-    if "!" in text or any(word in low for word in ["wow", "great", "awesome", "yay"]):
-        return "excited"
-    if "?" in text:
-        return "curious"
-    if any(word in low for word in ["sorry", "please", "thanks", "thank you"]):
-        return "soft"
+    """Disabled for speed. Always return neutral."""
     return "neutral"
 
 
@@ -69,9 +69,10 @@ async def _synthesize(text: str, output_wav: Path, voice: str, rate: str, pitch:
         temp_mp3.unlink()
 
 
-async def _synthesize_to_bytes(text: str, voice: str, rate: str, pitch: str) -> bytes:
+async def _synthesize_to_bytes(text: str, voice: str) -> bytes:
+    """Stream audio directly without MP3 conversion overhead."""
     edge_tts = _load_edge_tts()
-    communicate = edge_tts.Communicate(text=text, voice=voice, rate=rate, pitch=pitch)
+    communicate = edge_tts.Communicate(text=text, voice=voice, rate="+0%", pitch="+0Hz")
 
     chunks: list[bytes] = []
     async for chunk in communicate.stream():
@@ -81,8 +82,8 @@ async def _synthesize_to_bytes(text: str, voice: str, rate: str, pitch: str) -> 
     return b"".join(chunks)
 
 
-def _cached_audio_key(text: str, voice: str, rate: str, pitch: str) -> str:
-    return f"{voice}|{rate}|{pitch}|{text.strip()}"
+def _cached_audio_key(text: str, voice: str) -> str:
+    return f"{voice}|{text.strip()}"
 
 
 def _set_cache(key: str, value: bytes) -> None:
@@ -145,29 +146,30 @@ def speak(text: str, use_memory_mode: Optional[bool] = None) -> Path:
     if use_memory_mode is not None:
         in_memory_mode = use_memory_mode
 
-    tone = _detect_tone(text)
-    rate, pitch = _voice_params(tone)
-    cache_key = _cached_audio_key(text, voice, rate, pitch)
+    # Skip tone detection for speed - always use neutral
+    cache_key = _cached_audio_key(text, voice)
 
     if in_memory_mode:
         try:
             audio_bytes = _AUDIO_CACHE.get(cache_key)
             if audio_bytes is None:
-                audio_bytes = _run_async(_synthesize_to_bytes(text, voice, rate, pitch))
+                # Synthesize directly without MP3 conversion
+                audio_bytes = _run_async(_synthesize_to_bytes(text, voice))
                 _set_cache(cache_key, audio_bytes)
+            # Play in background without blocking (no sd.wait())
             audio_data, sample_rate = sf.read(io.BytesIO(audio_bytes), dtype="float32")
             sd.play(audio_data, sample_rate)
-            sd.wait()
             return Path()
-        except Exception:
-            # If direct-memory decode fails, gracefully fall back to file mode.
-            pass
+        except Exception as e:
+            logger.debug(f"TTS in-memory mode failed, falling back: {e}")
 
-    _run_async(_synthesize(text, output_wav, voice, rate, pitch))
-
-    audio_data, sample_rate = sf.read(str(output_wav), dtype="float32")
-    sd.play(audio_data, sample_rate)
-    sd.wait()
+    # File mode fallback - still async
+    try:
+        _run_async(_synthesize(text, output_wav, voice, "+0%", "+0Hz"))
+        audio_data, sample_rate = sf.read(str(output_wav), dtype="float32")
+        sd.play(audio_data, sample_rate)
+    except Exception as e:
+        logger.error(f"TTS failed: {e}")
 
     return output_wav
 
@@ -239,7 +241,7 @@ def stop_tts_worker() -> None:
 def warmup_tts() -> None:
     _load_edge_tts()
     try:
-        _run_async(_synthesize_to_bytes("Ready.", voice="en-US-AnaNeural", rate="+0%", pitch="+0Hz"))
+        _run_async(_synthesize_to_bytes("Ready.", "en-US-AnaNeural"))
     except Exception:
         # Warmup is best-effort and should not block startup.
         pass
