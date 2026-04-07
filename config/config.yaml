@@ -6,8 +6,8 @@ stt:
   vad_mode: true
   sample_rate: 16000
   recording_seconds: 4
-  max_recording_seconds: 20
-  speech_start_timeout_seconds: 300
+  max_recording_seconds: 2
+  speech_start_timeout_seconds: 4
   min_speech_seconds: 0.2
   recording_file: "audio/recording.wav"
   whisper_model: "base"
@@ -17,7 +17,7 @@ stt:
   silence_threshold: 0.004
   threshold_multiplier: 1.9
   chunk_seconds: 0.1
-  max_silence_seconds: 0.8
+  max_silence_seconds: 0.25
   input_device: null
 
 tts:
@@ -36,7 +36,7 @@ llm:
   stream_tts_max_delay_sec: 0.25
   openrouter_base_url: "https://openrouter.ai/api/v1"
   openrouter_model: "openai/gpt-4o-mini"
-  openrouter_api_key: "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"
+  openrouter_api_key: ""
   site_url: "http://localhost"
   app_name: "Alpha Local Assistant"
   temperature: 0.7

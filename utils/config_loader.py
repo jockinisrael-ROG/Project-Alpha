@@ -45,7 +45,7 @@ DEFAULT_CONFIG = {
         "stream_tts_max_delay_sec": 0.25,
         "openrouter_base_url": "https://openrouter.ai/api/v1",
         "openrouter_model": "openai/gpt-4o-mini",
-        "openrouter_api_key": "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",
+        "openrouter_api_key": "",
         "site_url": "http://localhost",
         "app_name": "Alpha Local Assistant",
         "temperature": 0.7,
