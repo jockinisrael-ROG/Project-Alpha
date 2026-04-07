@@ -1,0 +1,46 @@
+# Unity generated folders
+Library/
+Temp/
+Logs/
+Obj/
+Build/
+Builds/
+UserSettings/
+
+# Unity cache and local project files
+MemoryCaptures/
+Recordings/
+captures/
+*.csproj
+*.sln
+*.unityproj
+*.pidb
+*.suo
+*.user
+*.userprefs
+*.tmp
+*.temp
+*.booproj
+*.svd
+*.pdb
+
+# Rider / Visual Studio / VS Code
+.vs/
+.idea/
+.vscode/
+*.csproj.user
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Unity asset import artifacts
+*.mdb
+*.opendb
+*.VC.db
+*.stackdump
+
+# Keep package lock files if you use them, but ignore generated backups
+*.bak
+*.orig
