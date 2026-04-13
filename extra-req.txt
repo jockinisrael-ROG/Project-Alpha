@@ -6,3 +6,4 @@ edge-tts
 openai
 opencv-python<4.12
 websockets
+pyttsx3

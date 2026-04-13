@@ -26,6 +26,7 @@ CONFIG = load_config()
 MAX_HISTORY = int(CONFIG["llm"].get("max_history_messages", 12))
 MODEL = str(CONFIG["llm"].get("model", "openai/gpt-4o-mini"))
 TEMPERATURE = float(CONFIG["llm"].get("temperature", 0.7))
+MAX_TOKENS = int(CONFIG["llm"].get("max_tokens", 300))
 PROVIDER = str(CONFIG["llm"].get("provider", "openrouter")).lower()
 OPENROUTER_BASE_URL = str(
     CONFIG["llm"].get("openrouter_base_url", "https://openrouter.ai/api/v1")
@@ -220,9 +221,27 @@ def _get_json(url: str) -> Dict:
 
 
 def _openrouter_key() -> str:
-    return (
+    raw_key = (
         os.getenv("OPENROUTER_API_KEY", "").strip()
         or str(CONFIG["llm"].get("openrouter_api_key", "")).strip()
+    )
+    # Guard against accidental quoting from shell/env parsing.
+    return raw_key.strip().strip('"').strip("'")
+
+
+def _make_openrouter_client() -> Any:
+    key = _openrouter_key()
+    if not key:
+        raise RuntimeError("OpenRouter API key is missing")
+
+    return OpenAI(
+        api_key=key,
+        base_url=OPENROUTER_BASE_URL,
+        default_headers={
+            "Authorization": f"Bearer {key}",
+            "HTTP-Referer": OPENROUTER_SITE_URL,
+            "X-Title": OPENROUTER_APP_NAME,
+        },
     )
 
 
@@ -250,14 +269,7 @@ def initialize_backend() -> str:
         return _backend
 
     if PROVIDER == "openrouter" and _can_use_openrouter():
-        _openai_client = OpenAI(
-            api_key=_openrouter_key(),
-            base_url=OPENROUTER_BASE_URL,
-            default_headers={
-                "HTTP-Referer": OPENROUTER_SITE_URL,
-                "X-Title": OPENROUTER_APP_NAME,
-            },
-        )
+        _openai_client = _make_openrouter_client()
         _backend = "openrouter"
         return _backend
 
@@ -277,19 +289,13 @@ def get_backend_status() -> str:
 def _openrouter_response(messages: List[Dict[str, str]]) -> str:
     global _openai_client
     if _openai_client is None:
-        _openai_client = OpenAI(
-            api_key=_openrouter_key(),
-            base_url=OPENROUTER_BASE_URL,
-            default_headers={
-                "HTTP-Referer": OPENROUTER_SITE_URL,
-                "X-Title": OPENROUTER_APP_NAME,
-            },
-        )
+        _openai_client = _make_openrouter_client()
 
     response = _openai_client.chat.completions.create(
         model=OPENROUTER_MODEL,
         messages=messages,
         temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -297,19 +303,13 @@ def _openrouter_response(messages: List[Dict[str, str]]) -> str:
 def _openrouter_stream(messages: List[Dict[str, str]]) -> Generator[str, None, None]:
     global _openai_client
     if _openai_client is None:
-        _openai_client = OpenAI(
-            api_key=_openrouter_key(),
-            base_url=OPENROUTER_BASE_URL,
-            default_headers={
-                "HTTP-Referer": OPENROUTER_SITE_URL,
-                "X-Title": OPENROUTER_APP_NAME,
-            },
-        )
+        _openai_client = _make_openrouter_client()
 
     stream = _openai_client.chat.completions.create(
         model=OPENROUTER_MODEL,
         messages=messages,
         temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
         stream=True,
     )
 

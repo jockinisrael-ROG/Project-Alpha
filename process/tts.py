@@ -57,7 +57,6 @@ async def _synthesize(text: str, output_wav: Path, voice: str, rate: str, pitch:
     edge_tts = _load_edge_tts()
     output_wav.parent.mkdir(parents=True, exist_ok=True)
     temp_mp3 = output_wav.with_suffix(".mp3")
-
     communicate = edge_tts.Communicate(text=text, voice=voice, rate=rate, pitch=pitch)
     await communicate.save(str(temp_mp3))
 

@@ -6,8 +6,12 @@ import sqlite3
 from datetime import datetime
 from scipy.io.wavfile import write
 from faster_whisper import WhisperModel
-import pyttsx3
 import requests
+
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 
 # =============================
 # CONFIG
@@ -185,7 +189,7 @@ You are currently in ALPHA stage (not fully developed like Yuki).
 # LOAD MODELS
 # =============================
 whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-tts_engine = pyttsx3.init()
+tts_engine = pyttsx3.init() if pyttsx3 is not None else None
 
 # =============================
 # RECORD AUDIO
@@ -263,6 +267,8 @@ def get_ai_response(user_text):
 # TEXT TO SPEECH
 # =============================
 def speak(text):
+    if tts_engine is None:
+        return
     tts_engine.say(text)
     tts_engine.runAndWait()
 
